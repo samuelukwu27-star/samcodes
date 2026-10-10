@@ -815,11 +815,11 @@ class TestBuilder:
         monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
         llm = build_llm_with_openrouter_fallback("ignored/legacy-model")
         assert isinstance(llm, FreeModelFallbackLlm)
-        assert llm.model == "nvidia_nim/z-ai/glm4.5"
+        assert llm.model == "nvidia_nim/z-ai/glm-5.3"
         assert [fallback.model for fallback in llm._fallback_llms] == [
-            "openrouter/qwen/qwen3-30b-a3b:free",
-            "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
-            "openrouter/free",
+            "openrouter/google/gemma-4-31b-it:free",
+            "openrouter/nvidia/nemotron-3.5-lightning:free",
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         ]
 
     def test_builder_rejects_non_free_fallback_models(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -836,11 +836,11 @@ class TestBuilder:
     @pytest.mark.asyncio
     async def test_fallback_chain_tries_models_in_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
         llm = FreeModelFallbackLlm(
-            model="nvidia_nim/z-ai/glm4.5",
+            model="nvidia_nim/z-ai/glm-5.3",
             fallback_models=(
-                "qwen/qwen3-30b-a3b:free",
-                "nvidia/nemotron-3-nano-30b-a3b:free",
-                "openrouter/free",
+                "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
             ),
             nvidia_api_key="nvidia-key",
             openrouter_api_key="openrouter-key",
@@ -848,16 +848,20 @@ class TestBuilder:
         primary = AsyncMock(side_effect=RuntimeError("NIM unavailable"))
         monkeypatch.setattr(llm, "_invoke_primary", primary)
         fallback = AsyncMock(
-            side_effect=[RuntimeError("Qwen unavailable"), RuntimeError("Nemotron unavailable"), "answer"]
+            side_effect=[
+                RuntimeError("Gemma unavailable"),
+                RuntimeError("Nemotron Lightning unavailable"),
+                "answer",
+            ]
         )
         monkeypatch.setattr(llm, "_invoke_fallback", fallback)
 
         assert await llm.invoke("prompt") == "answer"
         primary.assert_awaited_once_with("prompt", None)
         assert [call.args[0].model for call in fallback.await_args_list] == [
-            "openrouter/qwen/qwen3-30b-a3b:free",
-            "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
-            "openrouter/free",
+            "openrouter/google/gemma-4-31b-it:free",
+            "openrouter/nvidia/nemotron-3.5-lightning:free",
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         ]
 
 

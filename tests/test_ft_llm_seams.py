@@ -211,7 +211,7 @@ class TestProductionKwargShapesReachAcompletion:
         assert sent["web_search_options"] == {"search_context_size": "high"}
         assert sent["verbosity"] == "high"  # top-level, NOT tucked in extra_body
         assert "reasoning" not in sent
-        assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
+        assert sent["model"] == "nvidia_nim/z-ai/glm-5.3"
         assert sent["temperature"] is None
 
     async def test_constrained_parser_config_object_funnels_pydantic_response_format(
@@ -231,7 +231,7 @@ class TestProductionKwargShapesReachAcompletion:
         assert issubclass(sent["response_format"], PercentileListWrapper)
         assert "extra_body" not in sent
         assert "reasoning" not in sent
-        assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
+        assert sent["model"] == "nvidia_nim/z-ai/glm-5.3"
         assert sent["temperature"] is None
 
     async def test_real_forecaster_roster_funnels_declared_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -249,7 +249,7 @@ class TestProductionKwargShapesReachAcompletion:
             # temperature=None must survive for every reasoning forecaster (no injected 0).
             assert sent["temperature"] is None
             assert sent["timeout"] == declared["timeout"]
-            assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
+            assert sent["model"] == "nvidia_nim/z-ai/glm-5.3"
             assert "reasoning" not in sent
             assert "extra_body" not in sent
 

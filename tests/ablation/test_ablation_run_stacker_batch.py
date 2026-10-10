@@ -356,8 +356,8 @@ class TestDefaultStackerUsesFreeModelChain:
             FreeModelFallbackLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
         )
 
-        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
-        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
+        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm-5.3")
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "google/gemma-4-31b-it:free")
 
         # Pin the new defaults at the constant level — primary is opus-4.5,
         # fallback is gpt-5.6-sol (different provider for independent failure
@@ -401,7 +401,7 @@ class TestDefaultStackerUsesFreeModelChain:
         assert len(captured_llms) == 1
         primary = captured_llms[0]
         assert isinstance(primary, FreeModelFallbackLlm)
-        assert primary.model == "nvidia_nim/z-ai/glm4.5"
+        assert primary.model == "nvidia_nim/z-ai/glm-5.3"
 
     def test_default_stacker_in_batch_uses_opus_4_5_via_donated_key_wrapper(
         self, cache: AblationCache, parser_llm: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -410,8 +410,8 @@ class TestDefaultStackerUsesFreeModelChain:
             FreeModelFallbackLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
         )
 
-        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
-        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
+        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm-5.3")
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "google/gemma-4-31b-it:free")
 
         captured_llms: list[Any] = []
 
@@ -455,4 +455,4 @@ class TestDefaultStackerUsesFreeModelChain:
         assert len(captured_llms) == 1
         primary = captured_llms[0]
         assert isinstance(primary, FreeModelFallbackLlm)
-        assert primary.model == "nvidia_nim/z-ai/glm4.5"
+        assert primary.model == "nvidia_nim/z-ai/glm-5.3"

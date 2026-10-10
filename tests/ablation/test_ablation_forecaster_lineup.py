@@ -92,12 +92,12 @@ def test_build_prod_forecaster_llms_uses_free_model_chain(monkeypatch) -> None:
     from metaculus_bot.ablation.forecaster_lineup import build_prod_forecaster_llms
     from metaculus_bot.fallback_openrouter import FreeModelFallbackLlm
 
-    monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
-    monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
+    monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm-5.3")
+    monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "google/gemma-4-31b-it:free")
 
     llms = build_prod_forecaster_llms()
     assert len(llms) == 3
     for llm in llms:
         assert isinstance(llm, FreeModelFallbackLlm)
-        assert llm.model == "nvidia_nim/z-ai/glm4.5"
-        assert [fallback.model for fallback in llm._fallback_llms] == ["openrouter/qwen/qwen3-30b-a3b:free"]
+        assert llm.model == "nvidia_nim/z-ai/glm-5.3"
+        assert [fallback.model for fallback in llm._fallback_llms] == ["openrouter/google/gemma-4-31b-it:free"]

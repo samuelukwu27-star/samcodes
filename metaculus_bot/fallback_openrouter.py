@@ -782,12 +782,12 @@ def build_llm_with_free_model_fallback(**kwargs: Any) -> GeneralLlm:
     # not portable across the GLM, Qwen, and Nemotron endpoints.
     kwargs.pop("reasoning", None)
     kwargs.pop("extra_body", None)
-    primary_model = os.getenv(NVIDIA_NIM_MODEL_ENV, "nvidia_nim/z-ai/glm4.5")
+    primary_model = os.getenv(NVIDIA_NIM_MODEL_ENV, "nvidia_nim/z-ai/glm-5.3")
     fallback_models = tuple(
         model.strip()
         for model in os.getenv(
             OPENROUTER_FREE_FALLBACK_MODELS_ENV,
-            "qwen/qwen3-30b-a3b:free,nvidia/nemotron-3-nano-30b-a3b:free,openrouter/free",
+            "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-lightning:free,nvidia/nemotron-3-ultra-550b-a55b:free",
         ).split(",")
         if model.strip()
     )

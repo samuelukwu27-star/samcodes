@@ -10,9 +10,8 @@ Posture pinned by these tests:
   ``api_key`` set), so litellm reads ``OPENROUTER_API_KEY`` from env at
   invoke time — ``:free`` models bypass the donated key because their
   providers aren't in ``DONATED_KEY_PROVIDERS`` (donated key 404s).
-* The PROD lineup routes through the donated-key wrapper: ablation IS Metaculus
-  work, and its anthropic/openai models are donated-covered, so they bill to the
-  donated key with personal-key fallback.
+* The PROD lineup keeps three slots, each using the configured NVIDIA NIM primary
+    and OpenRouter free-only fallback chain.
 """
 
 from __future__ import annotations
@@ -88,25 +87,17 @@ def test_build_free_parser_llm_uses_gemma_4_31b() -> None:
     assert parser.model == FREE_PARSER_MODEL == "openrouter/google/gemma-4-31b-it:free"
 
 
-def test_build_prod_forecaster_llms_routes_via_donated_wrapper(monkeypatch) -> None:
-    """Prod ensemble bills to the donated key: each model is wrapped in
-    FallbackOpenRouterLlm (donated primary -> personal fallback). Ablation IS
-    Metaculus work, and these anthropic/openai models are donated-covered.
+def test_build_prod_forecaster_llms_uses_free_model_chain(monkeypatch) -> None:
+    """All three production-like slots use NIM first and free-only fallbacks."""
+    from metaculus_bot.ablation.forecaster_lineup import build_prod_forecaster_llms
+    from metaculus_bot.fallback_openrouter import FreeModelFallbackLlm
 
-    Requires both keys set + distinct for the wrapper to engage (matches
-    ``build_llm_with_openrouter_fallback``); in CI neither is set, so we inject
-    distinct placeholders.
-    """
-    from metaculus_bot.ablation.forecaster_lineup import PROD_FORECASTER_MODELS, build_prod_forecaster_llms
-    from metaculus_bot.fallback_openrouter import FallbackOpenRouterLlm
-
-    monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "general")
+    monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
+    monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
 
     llms = build_prod_forecaster_llms()
-    assert len(llms) == len(PROD_FORECASTER_MODELS) == 3
-    for llm, expected_model in zip(llms, PROD_FORECASTER_MODELS, strict=False):
-        assert isinstance(llm, FallbackOpenRouterLlm), (
-            f"{expected_model} must route via the donated-key wrapper (Metaculus work -> donated key)"
-        )
-        assert llm.model == expected_model
+    assert len(llms) == 3
+    for llm in llms:
+        assert isinstance(llm, FreeModelFallbackLlm)
+        assert llm.model == "nvidia_nim/z-ai/glm4.5"
+        assert [fallback.model for fallback in llm._fallback_llms] == ["openrouter/qwen/qwen3-30b-a3b:free"]

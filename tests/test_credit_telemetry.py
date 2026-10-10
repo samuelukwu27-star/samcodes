@@ -26,7 +26,7 @@ import logging
 import threading
 import time
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -185,22 +185,22 @@ class TestCreditAlertSuppressionWindow:
     The operator is self-funding the rest of the season, so a drained donated key
     must not redden CI until ``CREDIT_ALERT_RESUME_DATE``. Every ``today`` here is
     injected, so these tests keep asserting the same thing after the real date
-    passes 2026-09-10.
+    passes the configured resume date.
     """
 
-    def test_resume_date_is_2026_09_10(self) -> None:
-        """The hardcoded default is the contract; the env var is only an override."""
-        assert date(2026, 9, 10) == CREDIT_ALERT_RESUME_DATE
+    def test_resume_date_is_four_days_after_tournament_close(self) -> None:
+        """The default follows the active tournament; the env var is an override."""
+        from metaculus_bot.constants import TOURNAMENT_END_DATE
+
+        assert date.fromisoformat(TOURNAMENT_END_DATE) + timedelta(days=4) == CREDIT_ALERT_RESUME_DATE
 
     def test_inactive_before_resume_date(self) -> None:
-        assert credit_alerts_active(date(2026, 7, 25)) is False
-        assert credit_alerts_active(date(2026, 9, 9)) is False
+        assert credit_alerts_active(CREDIT_ALERT_RESUME_DATE - timedelta(days=1)) is False
 
     def test_active_on_and_after_resume_date(self) -> None:
         """Resume day itself counts as active — the window is closed-on-the-right."""
-        assert credit_alerts_active(date(2026, 9, 10)) is True
-        assert credit_alerts_active(date(2026, 9, 11)) is True
-        assert credit_alerts_active(date(2027, 1, 1)) is True
+        assert credit_alerts_active(CREDIT_ALERT_RESUME_DATE) is True
+        assert credit_alerts_active(CREDIT_ALERT_RESUME_DATE + timedelta(days=1)) is True
 
     def test_resume_date_is_after_tournament_close(self) -> None:
         """The suppression must not outlive the season it exists for."""

@@ -540,7 +540,7 @@ class TestPaidFallbackWarningExitClause:
     """The paid-fallback WARNING must not promise a red CI run it won't deliver.
 
     ``credit_alerts_active`` is monkeypatched (rather than waiting on the wall
-    clock) so both branches stay covered before and after 2026-09-10. The
+    clock) so both branches stay covered before and after the configured resume date. The
     ``suppressible`` flag is passed in by the caller, which has already paid for
     the donated-key probe — the note renders the decision, it doesn't re-derive it.
     """
@@ -819,24 +819,37 @@ class TestBuilder:
         assert [fallback.model for fallback in llm._fallback_llms] == [
             "openrouter/qwen/qwen3-30b-a3b:free",
             "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+            "openrouter/free",
         ]
 
     def test_builder_rejects_non_free_fallback_models(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b")
-        with pytest.raises(ValueError, match="must end in ':free'"):
+        with pytest.raises(ValueError, match="must end in ':free' or be 'openrouter/free'"):
             build_llm_with_openrouter_fallback("ignored/legacy-model")
+
+    def test_builder_accepts_openrouter_free_route(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "openrouter/free")
+        llm = build_llm_with_openrouter_fallback("ignored/legacy-model")
+        assert isinstance(llm, FreeModelFallbackLlm)
+        assert [fallback.model for fallback in llm._fallback_llms] == ["openrouter/free"]
 
     @pytest.mark.asyncio
     async def test_fallback_chain_tries_models_in_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
         llm = FreeModelFallbackLlm(
             model="nvidia_nim/z-ai/glm4.5",
-            fallback_models=("qwen/qwen3-30b-a3b:free", "nvidia/nemotron-3-nano-30b-a3b:free"),
+            fallback_models=(
+                "qwen/qwen3-30b-a3b:free",
+                "nvidia/nemotron-3-nano-30b-a3b:free",
+                "openrouter/free",
+            ),
             nvidia_api_key="nvidia-key",
             openrouter_api_key="openrouter-key",
         )
         primary = AsyncMock(side_effect=RuntimeError("NIM unavailable"))
         monkeypatch.setattr(llm, "_invoke_primary", primary)
-        fallback = AsyncMock(side_effect=[RuntimeError("Qwen unavailable"), "answer"])
+        fallback = AsyncMock(
+            side_effect=[RuntimeError("Qwen unavailable"), RuntimeError("Nemotron unavailable"), "answer"]
+        )
         monkeypatch.setattr(llm, "_invoke_fallback", fallback)
 
         assert await llm.invoke("prompt") == "answer"
@@ -844,6 +857,7 @@ class TestBuilder:
         assert [call.args[0].model for call in fallback.await_args_list] == [
             "openrouter/qwen/qwen3-30b-a3b:free",
             "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+            "openrouter/free",
         ]
 
 

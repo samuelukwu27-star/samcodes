@@ -45,6 +45,11 @@ _EXAMPLE_PROB_DECIMALS = 4
 # at exactly 0.0 or 1.0 (the prompt tells the model to use values in (0, 1)).
 _EXAMPLE_PROB_FLOOR = 0.01
 _EXAMPLE_PROB_CEIL = 0.99
+_BRIEF_RATIONALE_INSTRUCTION = (
+    "Keep the written rationale concise: at most 120 words. Do not reproduce the full analysis template or detailed "
+    "step-by-step reasoning; summarize only the decisive evidence, base rate, and uncertainty. The required JSON "
+    "forecast block is separate."
+)
 
 
 def _build_example_probs(n_opts: int) -> list[float]:
@@ -765,6 +770,8 @@ def binary_prompt(question: BinaryQuestion, research: str) -> str:
             • Top 3-5 evidence items + quick factual validity check.
             • Blind-spot scenario most likely to make this forecast wrong; direction of impact.
 
+            {_BRIEF_RATIONALE_INSTRUCTION}
+
             ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
             This block is the ONLY authoritative source of your forecast — a
             downstream deterministic parser reads it and nothing else. Responses
@@ -899,6 +906,8 @@ def multiple_choice_prompt(question: MultipleChoiceQuestion, research: str) -> s
 
         [**CRITICAL**: You MUST assign a probability (1-99%) to EVERY single option listed above.
         Even if an option seems very unlikely, assign it at least 1%. Never skip any option.]
+
+        {_BRIEF_RATIONALE_INSTRUCTION}
 
         ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
         This block is the ONLY authoritative source of your forecast — a downstream
@@ -1089,6 +1098,8 @@ def numeric_prompt(
             - Blind spot scenario and expected effect on tails.
             - Forecastability check: does your interval width match the forecastability classification?
 
+        {_BRIEF_RATIONALE_INSTRUCTION}
+
         ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
         This block is the ONLY authoritative source of your forecast — a downstream
         deterministic parser reads it and nothing else. Responses without it are
@@ -1196,6 +1207,8 @@ def stacking_binary_prompt(
            • Does this probability appropriately reflect the uncertainty in the question?
            • Sanity check: does this probability make sense given the base rate and evidence?
 
+        {_BRIEF_RATIONALE_INSTRUCTION}
+
         ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
         This block is the ONLY authoritative source of your forecast — a downstream
         deterministic parser reads it and nothing else. Responses without it are
@@ -1296,6 +1309,8 @@ def stacking_multiple_choice_prompt(
 
         **CRITICAL**: You MUST assign a probability (1-99%) to EVERY single option listed above.
         Even if an option seems very unlikely, assign it at least 1%. Never skip any option.
+
+        {_BRIEF_RATIONALE_INSTRUCTION}
 
         ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
         This block is the ONLY authoritative source of your forecast — a downstream
@@ -1414,6 +1429,8 @@ def stacking_numeric_prompt(
         Remember: Think in ranges, not points. Keep your extreme tails (P1 and P99) appropriately wide.
         Ensure strictly increasing percentiles.
         For a closed bound, no percentile may cross it. For an open bound, the displayed edge is NOT a hard limit — place percentiles at or beyond it when your reasoning puts probability mass there (see the bound notes above).
+
+        {_BRIEF_RATIONALE_INSTRUCTION}
 
         ── STRUCTURED FORECAST (machine-readable; REQUIRED) ──
         This block is the ONLY authoritative source of your forecast — a downstream

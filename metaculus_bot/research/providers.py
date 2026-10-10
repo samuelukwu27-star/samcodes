@@ -80,14 +80,16 @@ async def _nimble_search(query: str, api_key: str, *, end_date: str | None = Non
     }
     if end_date is not None:
         request_body["end_date"] = end_date
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.post(
             "https://sdk.nimbleway.com/v2/search",
             headers={"Authorization": f"Bearer {api_key}"},
             json=request_body,
-        ) as response:
-            response.raise_for_status()
-            payload = await response.json()
+        ) as response,
+    ):
+        response.raise_for_status()
+        payload = await response.json()
     if not isinstance(payload, dict):
         raise ValueError("Nimble Search returned a non-object response")
     return payload
@@ -647,10 +649,6 @@ def _forced_provider_choice(
     is_benchmarking: bool,
 ) -> tuple[ResearchCallable, str] | None:
     """Resolve an explicit ``RESEARCH_PROVIDER`` override, or None to fall through to auto."""
-    if forced_lc == "nimble":
-        if not os.getenv(NIMBLE_API_KEY_ENV):
-            raise ValueError(f"RESEARCH_PROVIDER=nimble requires {NIMBLE_API_KEY_ENV} to be set")
-        return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
     if forced_lc == "asknews":
         # Fail fast if creds missing to make misconfig obvious
         if not (os.getenv(ASKNEWS_CLIENT_ID_ENV) and os.getenv(ASKNEWS_SECRET_ENV)):
@@ -683,9 +681,6 @@ def _auto_provider_choice(
     is_benchmarking: bool,
 ) -> tuple[ResearchCallable, str]:
     """First provider whose credentials are present, in the documented priority order."""
-    if os.getenv(NIMBLE_API_KEY_ENV):
-        return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
-
     if os.getenv(ASKNEWS_CLIENT_ID_ENV) and os.getenv(ASKNEWS_SECRET_ENV):
         return _asknews_provider(), "asknews"
 
@@ -735,8 +730,13 @@ def choose_provider_with_name(
     """
     forced = os.getenv(RESEARCH_PROVIDER_ENV)
     if forced:
+        forced_lc = forced.strip().lower()
+        if forced_lc == "nimble":
+            if not os.getenv(NIMBLE_API_KEY_ENV):
+                raise ValueError(f"RESEARCH_PROVIDER=nimble requires {NIMBLE_API_KEY_ENV} to be set")
+            return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
         choice = _forced_provider_choice(
-            forced.strip().lower(),
+            forced_lc,
             default_llm=default_llm,
             exa_callback=exa_callback,
             perplexity_callback=perplexity_callback,
@@ -745,6 +745,9 @@ def choose_provider_with_name(
         )
         if choice is not None:
             return choice
+
+    if os.getenv(NIMBLE_API_KEY_ENV):
+        return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
 
     return _auto_provider_choice(
         default_llm=default_llm,

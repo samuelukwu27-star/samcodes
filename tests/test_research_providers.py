@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
+
+import pytest
+from forecasting_tools.data_models.questions import MetaculusQuestion
 
 from metaculus_bot.research import providers
 from metaculus_bot.research.providers import choose_provider_with_name, is_asknews_subscription_error
@@ -102,7 +106,7 @@ class TestNimbleProvider:
             }
 
         monkeypatch.setattr(providers, "_nimble_search", fake_search)
-        research = await provider(question)
+        research = await provider(cast(MetaculusQuestion, question))
 
         assert request["api_key"] == "test-key"
         assert question.question_text in request["query"]
@@ -111,15 +115,13 @@ class TestNimbleProvider:
 
     @pytest.mark.asyncio
     async def test_benchmark_search_is_bounded_to_resolution_date(self, monkeypatch):
-        from datetime import datetime, timezone
-
         monkeypatch.setenv("NIMBLE_API_KEY", "test-key")
         question = SimpleNamespace(
             question_text="Will the agency publish its annual estimate?",
             resolution_criteria="",
             fine_print="",
             id_of_question=42,
-            scheduled_resolution_time=datetime(2024, 10, 1, tzinfo=timezone.utc),
+            scheduled_resolution_time=datetime(2024, 10, 1, tzinfo=UTC),
         )
         provider = providers._nimble_provider(is_benchmarking=True)
         request = {}
@@ -129,7 +131,7 @@ class TestNimbleProvider:
             return {"results": []}
 
         monkeypatch.setattr(providers, "_nimble_search", fake_search)
-        assert await provider(question) == ""
+        assert await provider(cast(MetaculusQuestion, question)) == ""
         assert request["end_date"] == "2024-10-01"
 
     def test_forced_nimble_requires_api_key(self, monkeypatch):

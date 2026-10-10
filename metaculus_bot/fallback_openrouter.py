@@ -11,7 +11,6 @@ from metaculus_bot.constants import (
     CREDIT_ALERT_RESUME_DATE,
     NVIDIA_NIM_API_KEY_ENV,
     NVIDIA_NIM_MODEL_ENV,
-    OAI_ANTH_OPENROUTER_KEY_ENV,
     OPENROUTER_API_KEY_ENV,
     OPENROUTER_FREE_FALLBACK_MODELS_ENV,
     credit_alerts_active,
@@ -750,7 +749,7 @@ class FreeModelFallbackLlm(GeneralLlm):
         super().__init__(model=model, api_key=nvidia_api_key, **kwargs)
         self._fallback_llms = [
             GeneralLlm(
-                model=f"openrouter/{fallback_model}",
+                model=fallback_model if fallback_model == "openrouter/free" else f"openrouter/{fallback_model}",
                 **({"api_key": openrouter_api_key} if openrouter_api_key else {}),
                 **kwargs,
             )
@@ -764,7 +763,7 @@ class FreeModelFallbackLlm(GeneralLlm):
                 if llm is self:
                     return await self._invoke_primary(prompt, system_prompt)
                 return await self._invoke_fallback(llm, prompt, system_prompt)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  # continue through the configured free-model chain
                 _record_deprecation_if_matched(llm.model, str(exc))
                 errors.append(exc)
                 logger.warning("Free model %s failed; trying the next configured free route: %s", llm.model, exc)
@@ -773,9 +772,7 @@ class FreeModelFallbackLlm(GeneralLlm):
     async def _invoke_primary(self, prompt: Any, system_prompt: str | None = None) -> str:
         return await super().invoke(prompt, system_prompt)
 
-    async def _invoke_fallback(
-        self, llm: GeneralLlm, prompt: Any, system_prompt: str | None = None
-    ) -> str:
+    async def _invoke_fallback(self, llm: GeneralLlm, prompt: Any, system_prompt: str | None = None) -> str:
         return await llm.invoke(prompt, system_prompt)
 
 
@@ -790,12 +787,12 @@ def build_llm_with_free_model_fallback(**kwargs: Any) -> GeneralLlm:
         model.strip()
         for model in os.getenv(
             OPENROUTER_FREE_FALLBACK_MODELS_ENV,
-            "qwen/qwen3-30b-a3b:free,nvidia/nemotron-3-nano-30b-a3b:free",
+            "qwen/qwen3-30b-a3b:free,nvidia/nemotron-3-nano-30b-a3b:free,openrouter/free",
         ).split(",")
         if model.strip()
     )
-    if any(not model.endswith(":free") for model in fallback_models):
-        raise ValueError("Every OPENROUTER_FREE_FALLBACK_MODELS entry must end in ':free'")
+    if any(not model.endswith(":free") and model != "openrouter/free" for model in fallback_models):
+        raise ValueError("Every OPENROUTER_FREE_FALLBACK_MODELS entry must end in ':free' or be 'openrouter/free'")
     return FreeModelFallbackLlm(
         model=primary_model,
         fallback_models=fallback_models,

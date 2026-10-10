@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from metaculus_bot.comment.markers import STACKER_SKIP_REASONS
+from metaculus_bot.constants import CREDIT_ALERT_RESUME_DATE
 from scripts.telemetry.markers import (
     MARKER_SPECS,
     coerce_value,
@@ -1427,7 +1428,7 @@ PAID_FALLBACK_LINE = (
 PAID_FALLBACK_SUPPRESSED_LINE = (
     PFX_WARN + "PAID PERSONAL-KEY FALLBACK: donated OpenRouter key failed for model=anthropic/claude-opus-4.8, "
     "so this call billed to the personal OPENROUTER_API_KEY instead of the free donated key. "
-    "Cause is a credit shortfall, so it is NOT counted as alertable until 2026-09-10 "
+    f"Cause is a credit shortfall, so it is NOT counted as alertable until {CREDIT_ALERT_RESUME_DATE.isoformat()} "
     "(operator is self-funding the season). error=APIError: insufficient credit"
 )
 
@@ -1632,7 +1633,7 @@ RUN_ALERTABLE_RED_LINE = (
 )
 RUN_ALERTABLE_SUPPRESSED_LINE = (
     PFX + "Run completed with 0 alertable degradation event(s) (bot=0, personal_key_fallback=7 "
-    "of which donated_404=0, credit=7 with 7 credit event(s) suppressed until 2026-09-10, "
+    f"of which donated_404=0, credit=7 with 7 credit event(s) suppressed until {CREDIT_ALERT_RESUME_DATE.isoformat()}, "
     "donated_key=drained); every fallback was a suppressed credit event, so this run stays green."
 )
 # The 2026-08-25 addition: a run where nothing degraded at all. It logged no line
@@ -1640,7 +1641,7 @@ RUN_ALERTABLE_SUPPRESSED_LINE = (
 # hid, since every run in it fell back at least once.
 RUN_ALERTABLE_CLEAN_LINE = (
     PFX + "Run completed clean with 0 alertable degradation event(s) (bot=0, personal_key_fallback=0 "
-    "of which donated_404=0, credit=0 with 0 credit event(s) suppressed until 2026-09-10); "
+    f"of which donated_404=0, credit=0 with 0 credit event(s) suppressed until {CREDIT_ALERT_RESUME_DATE.isoformat()}); "
     "nothing degraded, so this run stays green."
 )
 
@@ -1669,7 +1670,7 @@ class TestRunAlertableSummary:
         assert rec["personal_key_fallback"] == 7
         assert rec["credit"] == 7
         assert rec["suppressed_credit"] == 7
-        assert rec["resume_date"] == "2026-09-10"
+        assert rec["resume_date"] == CREDIT_ALERT_RESUME_DATE.isoformat()
         assert rec["donated_key"] == "drained"
         # Pre-2026-08-25 records carry no phrase marker, and neither does any
         # degraded line since — ``outcome`` is what says "clean", so it must stay

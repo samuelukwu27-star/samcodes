@@ -190,6 +190,26 @@ class TestForecastingWindowAnchor:
     classic 1945-Japan-detonation → "Will a detonation occur by 2030?"
     auto-YES error)."""
 
+    def test_all_forecast_prompts_keep_written_rationale_brief(self) -> None:
+        prompts = [
+            binary_prompt(_binary_q(), research="r"),
+            multiple_choice_prompt(_mc_q(), research="r"),
+            numeric_prompt(_numeric_q(), research="r", lower_bound_message="lbm", upper_bound_message="ubm"),
+            stacking_binary_prompt(_binary_q(), research="r", base_predictions=["a1", "a2"]),
+            stacking_multiple_choice_prompt(_mc_q(), research="r", base_predictions=["a1", "a2"]),
+            stacking_numeric_prompt(
+                _numeric_q(),
+                research="r",
+                base_predictions=["a1", "a2"],
+                lower_bound_message="lbm",
+                upper_bound_message="ubm",
+            ),
+        ]
+
+        for prompt in prompts:
+            assert "at most 120 words" in prompt
+            assert "Do not reproduce the full analysis template" in prompt
+
     # -- binary ------------------------------------------------------------
 
     def test_binary_injects_open_and_resolution_dates(self) -> None:

@@ -26,7 +26,7 @@ Three files form the startup chain:
   publish, stacker fallbacks, research-provider and summarizer failures, gap-fill
   v2 errors, and prediction-market degradation) or the donated OpenRouter key
   dropped below the refill floor. Credit-caused alerts are suppressed until
-  2026-09-10 while the operator self-funds the season — see "Credit alerting is
+  2027-01-10 while the operator self-funds the season — see "Credit alerting is
   suppressed" in `docs/operations.md`. See `main` in `cli.py`.
 - `metaculus_bot/forecaster.py` — the bot itself. `TemplateForecaster` subclasses the
   framework's `ForecastBot` and owns the per-question pipeline. The method to read

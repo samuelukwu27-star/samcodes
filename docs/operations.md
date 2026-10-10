@@ -187,7 +187,7 @@ CRPS and is no better than median on binary.
 | `PLATT_CALIBRATION_ENABLED` | off | unset | Post-hoc logistic recalibration of the final published probability |
 | `GEMINI_USE_DONATED_OPENROUTER_KEY` | on | `true` | Route OpenRouter Gemini calls through the donated key with personal fallback |
 | `OPENROUTER_CREDIT_FLOOR_USD` | see `constants.py` | unset (uses default) | Donated-key remaining-balance floor for the end-of-run refill reminder |
-| `OPENROUTER_CREDIT_ALERT_RESUME_DATE` | `2026-09-10` | unset (uses default) | Date the credit alerts start reddening CI again; before it, credit shortfalls log but exit zero |
+| `OPENROUTER_CREDIT_ALERT_RESUME_DATE` | Tournament close + 4 days (currently `2027-01-10`) | unset (uses default) | Date the credit alerts start reddening CI again; before it, credit shortfalls log but exit zero |
 
 ## GitHub Actions workflows
 
@@ -432,12 +432,12 @@ The floor is only checked against the donated key (the personal key reports no
 donated key routes nearly all spend through BYOK provider integrations, which
 leaves the plain `usage` field frozen while real money burns.
 
-### Credit alerting is suppressed until 2026-09-10
+### Credit alerting is suppressed until 2027-01-10
 
 The operator is funding the rest of the season out of pocket, so an empty donated
 key is the expected state rather than a defect. Until
-`CREDIT_ALERT_RESUME_DATE` (`2026-09-10` in `constants.py`, a few days after the
-tournament closes on `TOURNAMENT_END_DATE`), credit shortfalls no longer redden
+`CREDIT_ALERT_RESUME_DATE` (four days after `TOURNAMENT_END_DATE`, currently
+`2027-01-10`), credit shortfalls no longer redden
 CI. Two paths are gated, because either one alone would keep the check red:
 
 1. The floor breach. `cli.py` skips the `sys.exit(1)` and logs an INFO line
@@ -746,7 +746,7 @@ the telemetry markers:
   ever published. `docs/agentic_gap_fill.md` reads the fields in full.
 - `CREDIT_BALANCE` / `CREDIT_SPEND` / `CREDIT_FLOOR_BREACH` — credit telemetry,
   described above. `CREDIT_FLOOR_BREACH` keeps firing during the credit-alert
-  suppression window, so seeing one on a green run is expected until 2026-09-10;
+  suppression window, so seeing one on a green run is expected until 2027-01-10;
   the adjacent INFO line names the resume date.
 - `TIME_BUDGET: question=... budget_s=... close_time=... close_limited=...
   fast_path=...` — one line per question, emitted by `time_budget.py` before any
@@ -816,6 +816,6 @@ A run can also exit non-zero for degradation alerts — the counters above,
 personal-key fallbacks, or the model-deprecation tripwire — even when every
 question that met the minimum-forecaster threshold was published. The non-zero
 exit is the CI red-check signal to investigate; it does not mean publishing
-failed. Credit-caused shortfalls are exempt until 2026-09-10 (see the suppression
+failed. Credit-caused shortfalls are exempt until 2027-01-10 (see the suppression
 section above); every other cause still alerts. See the alert block near the end
 of `cli.py` for the exact conditions.

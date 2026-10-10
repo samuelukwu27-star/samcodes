@@ -198,7 +198,7 @@ class TestProductionKwargShapesReachAcompletion:
         assert sent["model"] == "openrouter/anthropic/claude-opus-4.8"
 
     async def test_native_search_config_object_funnels_web_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The real ``build_native_search_llm`` object funnels the web-search plumbing."""
+        """The builder keeps web-search controls but drops provider-specific model kwargs."""
         calls = _install_acompletion(monkeypatch)
         # Explicit effort/verbosity overrides so the shapes are pinned regardless of env.
         llm = build_native_search_llm("openai/gpt-5.6-terra", reasoning_effort="low", verbosity="high")
@@ -210,13 +210,14 @@ class TestProductionKwargShapesReachAcompletion:
         assert sent["plugins"] == [{"id": "web", "max_results": 20, "engine": "native"}]
         assert sent["web_search_options"] == {"search_context_size": "high"}
         assert sent["verbosity"] == "high"  # top-level, NOT tucked in extra_body
-        assert sent["reasoning"] == {"effort": "low"}
+        assert "reasoning" not in sent
+        assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
         assert sent["temperature"] is None
 
     async def test_constrained_parser_config_object_funnels_pydantic_response_format(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The real structured-parse builder funnels a pydantic ``response_format`` class + extra_body."""
+        """The structured-parse builder preserves schema output on the free model chain."""
         calls = _install_acompletion(monkeypatch)
         llm = _build_constrained_llm(PercentileListWrapper, "openrouter/openai/gpt-5.6-luna")
 
@@ -228,21 +229,15 @@ class TestProductionKwargShapesReachAcompletion:
         assert sent["response_format"] is PercentileListWrapper
         assert isinstance(sent["response_format"], type)
         assert issubclass(sent["response_format"], PercentileListWrapper)
-        assert sent["extra_body"] == {"provider": {"require_parameters": True}}
-        assert sent["reasoning"] == {"effort": "low"}
+        assert "extra_body" not in sent
+        assert "reasoning" not in sent
+        assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
         assert sent["temperature"] is None
 
     async def test_real_forecaster_roster_funnels_declared_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Every real forecaster slot funnels its declared kwargs (and temperature=None) intact.
-
-        Roster-agnostic: iterates the live ``FORECASTER_LLMS`` singletons and asserts
-        the funnel is transparent for whatever is configured. Also confirms the
-        current production reasoning/verbosity shapes are present on at least one slot
-        so this stays a meaningful pin rather than a vacuous loop.
-        """
+        """All three forecaster slots use the same portable NIM/free model chain."""
         assert FORECASTER_LLMS, "roster must be non-empty for this pin to mean anything"
-        saw_xhigh_reasoning = False
-        saw_verbosity_extra_body = False
+        assert len(FORECASTER_LLMS) == 3
 
         for llm in FORECASTER_LLMS:
             declared = llm.litellm_kwargs
@@ -254,17 +249,9 @@ class TestProductionKwargShapesReachAcompletion:
             # temperature=None must survive for every reasoning forecaster (no injected 0).
             assert sent["temperature"] is None
             assert sent["timeout"] == declared["timeout"]
-            if "reasoning" in declared:
-                assert sent["reasoning"] == declared["reasoning"]
-                if declared["reasoning"] == _PROD_REASONING_XHIGH:
-                    saw_xhigh_reasoning = True
-            if "extra_body" in declared:
-                assert sent["extra_body"] == declared["extra_body"]
-                if declared["extra_body"] == _PROD_VERBOSITY_EXTRA_BODY:
-                    saw_verbosity_extra_body = True
-
-        assert saw_xhigh_reasoning, "expected a forecaster with reasoning={'effort':'xhigh'} in the roster"
-        assert saw_verbosity_extra_body, "expected a forecaster with extra_body={'verbosity':'high'} in the roster"
+            assert sent["model"] == "nvidia_nim/z-ai/glm4.5"
+            assert "reasoning" not in sent
+            assert "extra_body" not in sent
 
 
 class TestTemperatureNoneWorkaround:

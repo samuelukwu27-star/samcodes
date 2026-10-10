@@ -338,21 +338,12 @@ class TestConcurrentStackerLock:
 
 
 # ===========================================================================
-# Default stacker LLM construction — donated-key wrapper
+# Default stacker LLM construction — free-only model chain
 # ===========================================================================
 
 
-class TestDefaultStackerWiredViaDonatedKey:
-    """When callers pass ``stacker_llm=None`` we construct claude-opus-4.5
-    (primary) and gpt-5.6-sol (fallback) routed via ``build_llm_with_openrouter_fallback``
-    so the Metaculus-donated key is tried before the operator's paid key.
-
-    This mirrors production STACKER_LLM / STACKER_FALLBACK_LLM in
-    ``llm_configs.py``. An earlier iteration tried an OpenAI model as primary,
-    but the operator's local-`.env` donated key data-policy blocked it;
-    Anthropic models work cleanly. Production with a different
-    ``OAI_ANTH_OPENROUTER_KEY`` GitHub-secret value behaved differently.
-    """
+class TestDefaultStackerUsesFreeModelChain:
+    """Default stacker construction uses NVIDIA NIM and free OpenRouter fallbacks."""
 
     def test_default_stacker_uses_opus_4_5_via_donated_key_wrapper(
         self, cache: AblationCache, parser_llm: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -362,12 +353,11 @@ class TestDefaultStackerWiredViaDonatedKey:
             DEFAULT_STACKER_MODEL,
         )
         from metaculus_bot.fallback_openrouter import (
-            FallbackOpenRouterLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
+            FreeModelFallbackLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
         )
 
-        # Both keys present + distinct → wrapper chooses FallbackOpenRouterLlm.
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "fake_donated")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "fake_paid")
+        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
 
         # Pin the new defaults at the constant level — primary is opus-4.5,
         # fallback is gpt-5.6-sol (different provider for independent failure
@@ -410,20 +400,18 @@ class TestDefaultStackerWiredViaDonatedKey:
         assert payload["success"] is True
         assert len(captured_llms) == 1
         primary = captured_llms[0]
-        assert isinstance(primary, FallbackOpenRouterLlm), (
-            f"Default stacker should be FallbackOpenRouterLlm; got {type(primary).__name__}"
-        )
-        assert primary.model == "openrouter/anthropic/claude-opus-4.5"
+        assert isinstance(primary, FreeModelFallbackLlm)
+        assert primary.model == "nvidia_nim/z-ai/glm4.5"
 
     def test_default_stacker_in_batch_uses_opus_4_5_via_donated_key_wrapper(
         self, cache: AblationCache, parser_llm: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from metaculus_bot.fallback_openrouter import (
-            FallbackOpenRouterLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
+            FreeModelFallbackLlm,  # HARNESS-SCAN-EXEMPT-function-level-import
         )
 
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "fake_donated")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "fake_paid")
+        monkeypatch.setenv("NVIDIA_NIM_MODEL", "nvidia_nim/z-ai/glm4.5")
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b:free")
 
         captured_llms: list[Any] = []
 
@@ -466,5 +454,5 @@ class TestDefaultStackerWiredViaDonatedKey:
         assert results[10]["success"] is True
         assert len(captured_llms) == 1
         primary = captured_llms[0]
-        assert isinstance(primary, FallbackOpenRouterLlm)
-        assert primary.model == "openrouter/anthropic/claude-opus-4.5"
+        assert isinstance(primary, FreeModelFallbackLlm)
+        assert primary.model == "nvidia_nim/z-ai/glm4.5"

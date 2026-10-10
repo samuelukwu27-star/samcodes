@@ -12,7 +12,7 @@ subsets of that total, broken out in the log line for diagnostics but NOT
 separately added to ``alertable`` (that would double-count events already inside
 the generic total).
 
-Credit alerting is suppressed until ``CREDIT_ALERT_RESUME_DATE`` (2026-09-10)
+Credit alerting is suppressed until ``CREDIT_ALERT_RESUME_DATE``
 because the operator is self-funding the rest of the season, so a drained donated
 key is expected rather than broken. During the window the floor breach does not
 exit non-zero and the credit-caused fallbacks are subtracted back out of
@@ -35,7 +35,7 @@ import logging
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -65,9 +65,9 @@ from scripts.telemetry.markers import MARKER_SPECS
 
 # Dates on either side of the suppression boundary. Injected instead of read from
 # the clock so these tests keep exercising both branches forever.
-DURING_SUPPRESSION = date(2026, 7, 25)
+DURING_SUPPRESSION = CREDIT_ALERT_RESUME_DATE - timedelta(days=1)
 ON_RESUME_DATE = CREDIT_ALERT_RESUME_DATE
-AFTER_RESUME_DATE = date(2026, 10, 1)
+AFTER_RESUME_DATE = CREDIT_ALERT_RESUME_DATE + timedelta(days=1)
 
 # Provider-degradation suppression takes no injected date on the property path
 # (``alertable_count`` is a plain sum), so its two branches are pinned by choosing
@@ -481,7 +481,9 @@ class TestCliCreditAlertSuppression:
             telemetry.log_end_and_check_floor.assert_called_once()
 
         messages = [record.getMessage() for record in caplog.records]
-        assert any("credit alerting is suppressed until 2026-09-10" in msg for msg in messages), messages
+        assert any(
+            f"credit alerting is suppressed until {CREDIT_ALERT_RESUME_DATE.isoformat()}" in msg for msg in messages
+        ), messages
 
     def test_floor_breach_on_resume_date_exits_non_zero(self) -> None:
         """The window is closed-on-the-right: the resume day itself alerts."""
@@ -657,10 +659,14 @@ class TestCliCreditAlertSuppression:
             assert summary, messages
             assert "with 0 alertable" in summary[0], summary
             assert "personal_key_fallback=7" in summary[0], summary
-            assert "credit=7 with 7 credit event(s) suppressed until 2026-09-10" in summary[0], summary
+            assert (
+                f"credit=7 with 7 credit event(s) suppressed until {CREDIT_ALERT_RESUME_DATE.isoformat()}" in summary[0]
+            ), summary
             assert "donated_key=drained" in summary[0], summary
             # The floor-breach explanation is a separate concern and still lands.
-            assert any("credit alerting is suppressed until 2026-09-10" in msg for msg in messages), messages
+            assert any(
+                f"credit alerting is suppressed until {CREDIT_ALERT_RESUME_DATE.isoformat()}" in msg for msg in messages
+            ), messages
         finally:
             fb_module._generic_key_fallback_count = 0
             fb_module._credit_key_fallback_count = 0

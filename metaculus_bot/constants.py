@@ -251,15 +251,18 @@ OPENROUTER_CREDIT_FLOOR_USD: float = _float_env("OPENROUTER_CREDIT_FLOOR_USD", 1
 # rather than a defect, and the two paths that turn a credit shortfall into a
 # non-zero exit — the floor breach in cli.main and the credit-caused
 # donated->personal fallbacks folded into ``alertable`` — must not redden CI
-# until this date. The tournament closes on TOURNAMENT_END_DATE (2026-09-06);
-# alerting resumes a few days later so a stale suppression can't outlive the
+# until this date. Alerting resumes four days after TOURNAMENT_END_DATE so a
+# stale suppression can't outlive the
 # season. Every CREDIT_* log line, including CREDIT_FLOOR_BREACH, keeps firing
 # throughout: only the exit status and the alertable arithmetic change.
 #
 # Non-credit fallback causes (401 invalid/disabled key, 404 no-allowed-providers,
 # 429 rate limit, guardrail/data-policy) stay fully alertable — each of those is
 # real breakage, not an expected empty wallet.
-CREDIT_ALERT_RESUME_DATE: date = _date_env("OPENROUTER_CREDIT_ALERT_RESUME_DATE", date(2026, 9, 10))
+CREDIT_ALERT_RESUME_DATE: date = _date_env(
+    "OPENROUTER_CREDIT_ALERT_RESUME_DATE",
+    date.fromisoformat(TOURNAMENT_END_DATE) + timedelta(days=4),
+)
 
 
 def credit_alerts_active(today: date | None = None) -> bool:

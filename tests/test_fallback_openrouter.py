@@ -12,6 +12,7 @@ from metaculus_bot.credit_telemetry import DonatedKeyState, reset_donated_key_st
 from metaculus_bot.fallback_openrouter import (
     DONATED_KEY_PROVIDERS,
     FallbackOpenRouterLlm,
+    FreeModelFallbackLlm,
     build_llm_with_openrouter_fallback,
     get_credit_key_fallback_count,
     get_donated_404_fallback_count,
@@ -809,99 +810,41 @@ class TestFallbackCounters:
 
 
 class TestBuilder:
-    def test_builder_returns_wrapper_when_both_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        llm = build_llm_with_openrouter_fallback("openrouter/openai/gpt-5.1")
-        assert isinstance(llm, FallbackOpenRouterLlm)
+    def test_builder_uses_nvidia_primary_and_free_openrouter_fallbacks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NVIDIA_NIM_API_KEY", "nvidia-key")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+        llm = build_llm_with_openrouter_fallback("ignored/legacy-model")
+        assert isinstance(llm, FreeModelFallbackLlm)
+        assert llm.model == "nvidia_nim/z-ai/glm4.5"
+        assert [fallback.model for fallback in llm._fallback_llms] == [
+            "openrouter/qwen/qwen3-30b-a3b:free",
+            "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+        ]
 
-    def test_builder_plain_when_only_general(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("OAI_ANTH_OPENROUTER_KEY", raising=False)
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        llm = build_llm_with_openrouter_fallback("openrouter/openai/gpt-5.1")
-        # Not wrapper, should be a GeneralLlm
-        from forecasting_tools import GeneralLlm as GL
+    def test_builder_rejects_non_free_fallback_models(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENROUTER_FREE_FALLBACK_MODELS", "qwen/qwen3-30b-a3b")
+        with pytest.raises(ValueError, match="must end in ':free'"):
+            build_llm_with_openrouter_fallback("ignored/legacy-model")
 
-        assert isinstance(llm, GL)
-        assert not isinstance(llm, FallbackOpenRouterLlm)
+    @pytest.mark.asyncio
+    async def test_fallback_chain_tries_models_in_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        llm = FreeModelFallbackLlm(
+            model="nvidia_nim/z-ai/glm4.5",
+            fallback_models=("qwen/qwen3-30b-a3b:free", "nvidia/nemotron-3-nano-30b-a3b:free"),
+            nvidia_api_key="nvidia-key",
+            openrouter_api_key="openrouter-key",
+        )
+        primary = AsyncMock(side_effect=RuntimeError("NIM unavailable"))
+        monkeypatch.setattr(llm, "_invoke_primary", primary)
+        fallback = AsyncMock(side_effect=[RuntimeError("Qwen unavailable"), "answer"])
+        monkeypatch.setattr(llm, "_invoke_fallback", fallback)
 
-    def test_builder_plain_for_non_donated_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Models from providers not in DONATED_KEY_PROVIDERS get a plain GeneralLlm
-        (no donated-key wrapping). Grok via x-ai is the canonical example.
-        """
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        llm = build_llm_with_openrouter_fallback("openrouter/x-ai/grok-4.1-fast")
-        # Not wrapper, should be a GeneralLlm
-        from forecasting_tools import GeneralLlm as GL
-
-        assert isinstance(llm, GL)
-        assert not isinstance(llm, FallbackOpenRouterLlm)
-
-    def test_builder_returns_wrapper_for_google_flash_when_donated_toggle_on(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Flash Google models route via the donated wrapper when the toggle is ON.
-
-        Originally added in task #12 (Google in DONATED_KEY_PROVIDERS). After the
-        2026-06-16 rate-limit bump the donated key serves the flash models, so a
-        flash slug returns a FallbackOpenRouterLlm (donated primary, personal
-        fallback). gemini-3.1-pro is handled separately by the blocklist test.
-        """
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        monkeypatch.setenv("GEMINI_USE_DONATED_OPENROUTER_KEY", "true")
-        llm = build_llm_with_openrouter_fallback("openrouter/google/gemini-3.5-flash")
-        assert isinstance(llm, FallbackOpenRouterLlm)
-
-    def test_builder_plain_for_google_pro_blocklisted_when_toggle_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """gemini-3.1-pro is pinned to the personal key via the blocklist even with
-        the donated toggle ON — so the builder returns a plain GeneralLlm (no
-        donated attempt, no 429, no fallback-counter bump), while a flash model in
-        the same env returns a FallbackOpenRouterLlm.
-
-        Temporary workaround; see DONATED_KEY_BLOCKED_GOOGLE_MODELS
-        (``TODO(gemini-3.1-pro-donated)``) and FUTURE.md.
-        """
-        from forecasting_tools import GeneralLlm as GL
-
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        monkeypatch.setenv("GEMINI_USE_DONATED_OPENROUTER_KEY", "true")
-        pro = build_llm_with_openrouter_fallback("openrouter/google/gemini-3.1-pro-preview")
-        assert isinstance(pro, GL)
-        assert not isinstance(pro, FallbackOpenRouterLlm)
-        flash = build_llm_with_openrouter_fallback("openrouter/google/gemini-3.5-flash")
-        assert isinstance(flash, FallbackOpenRouterLlm)
-
-    def test_builder_plain_for_google_when_donated_toggle_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With the donated-key toggle off, ALL Google calls bypass the donated
-        wrapper entirely — the resulting LLM is a plain GeneralLlm using the
-        operator's general OpenRouter key.
-        """
-        from forecasting_tools import GeneralLlm as GL
-
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        monkeypatch.setenv("GEMINI_USE_DONATED_OPENROUTER_KEY", "false")
-        llm = build_llm_with_openrouter_fallback("openrouter/google/gemini-3.5-flash")
-        assert isinstance(llm, GL)
-        assert not isinstance(llm, FallbackOpenRouterLlm)
-
-    def test_builder_returns_wrapper_for_google_flash_when_toggle_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Default (env var unset) is ON: flash Google calls prefer the donated wrapper.
-
-        After Metaculus raised the Google rate limits (2026-06-16) the donated key
-        serves most Gemini, so with two distinct keys configured a flash slug
-        returns a FallbackOpenRouterLlm (donated primary, personal fallback).
-        gemini-3.1-pro stays blocklisted (plain GeneralLlm) — see the dedicated
-        blocklist test.
-        """
-        monkeypatch.setenv("OAI_ANTH_OPENROUTER_KEY", "special")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "general")
-        monkeypatch.delenv("GEMINI_USE_DONATED_OPENROUTER_KEY", raising=False)
-        llm = build_llm_with_openrouter_fallback("openrouter/google/gemini-3.5-flash")
-        assert isinstance(llm, FallbackOpenRouterLlm)
+        assert await llm.invoke("prompt") == "answer"
+        primary.assert_awaited_once_with("prompt", None)
+        assert [call.args[0].model for call in fallback.await_args_list] == [
+            "openrouter/qwen/qwen3-30b-a3b:free",
+            "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+        ]
 
 
 class TestDeprecationTripwire:

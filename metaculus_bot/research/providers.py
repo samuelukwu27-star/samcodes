@@ -17,9 +17,11 @@ import os
 import re
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import aiohttp
 from forecasting_tools import GeneralLlm, SmartSearcher
 from forecasting_tools.data_models.questions import MetaculusQuestion
 
@@ -42,6 +44,9 @@ from metaculus_bot.constants import (
     NATIVE_SEARCH_TIMEOUT,
     NATIVE_SEARCH_VERBOSITY_DEFAULT,
     NATIVE_SEARCH_VERBOSITY_ENV,
+    NIMBLE_API_KEY_ENV,
+    NIMBLE_SEARCH_MAX_RESULTS,
+    NIMBLE_SEARCH_TIMEOUT_S,
     OPENROUTER_API_KEY_ENV,
     PERPLEXITY_API_KEY_ENV,
     PERPLEXITY_RESEARCH_MODEL,
@@ -62,6 +67,78 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Concrete provider helpers
 # ---------------------------------------------------------------------------
+
+
+async def _nimble_search(query: str, api_key: str, *, end_date: str | None = None) -> dict[str, Any]:
+    timeout = aiohttp.ClientTimeout(total=NIMBLE_SEARCH_TIMEOUT_S)
+    request_body: dict[str, Any] = {
+        "query": query,
+        "search_depth": "standard",
+        "full_content": False,
+        "max_results": NIMBLE_SEARCH_MAX_RESULTS,
+        "output_format": "markdown",
+    }
+    if end_date is not None:
+        request_body["end_date"] = end_date
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(
+            "https://sdk.nimbleway.com/v2/search",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=request_body,
+        ) as response:
+            response.raise_for_status()
+            payload = await response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("Nimble Search returned a non-object response")
+    return payload
+
+
+def _nimble_provider(*, is_benchmarking: bool = False) -> ResearchCallable:
+    async def _fetch(question: MetaculusQuestion) -> str:
+        api_key = os.getenv(NIMBLE_API_KEY_ENV)
+        if not api_key:
+            raise ValueError(f"RESEARCH_PROVIDER=nimble requires {NIMBLE_API_KEY_ENV} to be set")
+        end_date: str | None = None
+        if is_benchmarking:
+            scheduled = getattr(question, "scheduled_resolution_time", None)
+            if not isinstance(scheduled, datetime):
+                logger.warning("Nimble benchmark search skipped: no scheduled resolution time")
+                return ""
+            end_date = scheduled.date().isoformat()
+
+        query_parts = [
+            getattr(question, "question_text", ""),
+            getattr(question, "resolution_criteria", ""),
+            getattr(question, "fine_print", ""),
+        ]
+        query = "\n".join(str(part).strip() for part in query_parts if part and str(part).strip())[:4000]
+        payload = await _nimble_search(query, api_key, end_date=end_date)
+        qid = getattr(question, "id_of_question", None)
+        record_raw_research(qid=qid, provider="nimble", payload=payload)
+
+        raw_results = payload.get("results", [])
+        if not isinstance(raw_results, list):
+            raise ValueError("Nimble Search response has invalid results")
+        sections: list[str] = []
+        for result in raw_results:
+            if not isinstance(result, dict):
+                continue
+            title = str(result.get("title") or "").strip()
+            url = str(result.get("url") or "").strip()
+            description = str(result.get("description") or "").strip()
+            content = str(result.get("content") or "").strip()
+            body = content or description
+            if not (title or body) or not url:
+                continue
+            sections.append(f"- [{title or url}]({url})\n  {body}" if body else f"- [{title or url}]({url})")
+
+        if not sections:
+            record_provider_detail(qid, "nimble", {"sources": {"results": "empty(no_results)"}})
+            return ""
+        logger.info("Nimble: Got %d results for question=%s", len(sections), qid)
+        return "\n\n".join(sections)
+
+    return _fetch
 
 
 _ASKNEWS_GLOBAL_SEMAPHORE: asyncio.Semaphore | None = None
@@ -570,6 +647,10 @@ def _forced_provider_choice(
     is_benchmarking: bool,
 ) -> tuple[ResearchCallable, str] | None:
     """Resolve an explicit ``RESEARCH_PROVIDER`` override, or None to fall through to auto."""
+    if forced_lc == "nimble":
+        if not os.getenv(NIMBLE_API_KEY_ENV):
+            raise ValueError(f"RESEARCH_PROVIDER=nimble requires {NIMBLE_API_KEY_ENV} to be set")
+        return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
     if forced_lc == "asknews":
         # Fail fast if creds missing to make misconfig obvious
         if not (os.getenv(ASKNEWS_CLIENT_ID_ENV) and os.getenv(ASKNEWS_SECRET_ENV)):
@@ -602,6 +683,9 @@ def _auto_provider_choice(
     is_benchmarking: bool,
 ) -> tuple[ResearchCallable, str]:
     """First provider whose credentials are present, in the documented priority order."""
+    if os.getenv(NIMBLE_API_KEY_ENV):
+        return _nimble_provider(is_benchmarking=is_benchmarking), "nimble"
+
     if os.getenv(ASKNEWS_CLIENT_ID_ENV) and os.getenv(ASKNEWS_SECRET_ENV):
         return _asknews_provider(), "asknews"
 
@@ -638,12 +722,13 @@ def choose_provider_with_name(
 ) -> tuple[ResearchCallable, str]:
     """Return a research coroutine and its provider name.
 
-    Priority order replicates pre-refactor behaviour:
-    1. AskNews (ASKNEWS_CLIENT_ID & ASKNEWS_SECRET)
-    2. Exa.ai (EXA_API_KEY)
-    3. Perplexity (PERPLEXITY_API_KEY)
-    4. Perplexity via OpenRouter (OPENROUTER_API_KEY)
-    5. Fallback stub that returns an empty string.
+    Priority order:
+    1. Nimble Search (NIMBLE_API_KEY)
+    2. AskNews (ASKNEWS_CLIENT_ID & ASKNEWS_SECRET)
+    3. Exa.ai (EXA_API_KEY)
+    4. Perplexity (PERPLEXITY_API_KEY)
+    5. Perplexity via OpenRouter (OPENROUTER_API_KEY)
+    6. Fallback stub that returns an empty string.
 
     ``RESEARCH_PROVIDER`` forces a specific provider; an unrecognized value falls
     through to the priority order above.

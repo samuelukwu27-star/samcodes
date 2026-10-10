@@ -9,8 +9,11 @@ from forecasting_tools import GeneralLlm
 
 from metaculus_bot.constants import (
     CREDIT_ALERT_RESUME_DATE,
+    NVIDIA_NIM_API_KEY_ENV,
+    NVIDIA_NIM_MODEL_ENV,
     OAI_ANTH_OPENROUTER_KEY_ENV,
     OPENROUTER_API_KEY_ENV,
+    OPENROUTER_FREE_FALLBACK_MODELS_ENV,
     credit_alerts_active,
     gemini_use_donated_openrouter_key,
 )
@@ -732,35 +735,77 @@ class FallbackOpenRouterLlm(GeneralLlm):
         return await self._secondary_llm.invoke(prompt, system_prompt)
 
 
-def build_llm_with_openrouter_fallback(model: str, **kwargs: Any) -> GeneralLlm:
-    """
-    Construct a GeneralLlm that automatically falls back from the Metaculus-donated OpenRouter
-    key to the operator's general key for providers covered by the donated key (see
-    ``DONATED_KEY_PROVIDERS``). For other models, returns a plain GeneralLlm.
-    """
-    if should_route_via_donated_key(model):
-        special_key = os.getenv(OAI_ANTH_OPENROUTER_KEY_ENV)
-        general_key = os.getenv(OPENROUTER_API_KEY_ENV)
+class FreeModelFallbackLlm(GeneralLlm):
+    """NVIDIA NIM primary with OpenRouter free-only model fallbacks."""
 
-        # If both keys exist and are distinct, use the fallback wrapper
-        if special_key and general_key and special_key != general_key:
-            return FallbackOpenRouterLlm(
-                model=model,
-                primary_api_key=special_key,
-                secondary_api_key=general_key,
+    def __init__(
+        self,
+        *,
+        model: str,
+        fallback_models: tuple[str, ...],
+        nvidia_api_key: str | None,
+        openrouter_api_key: str | None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(model=model, api_key=nvidia_api_key, **kwargs)
+        self._fallback_llms = [
+            GeneralLlm(
+                model=f"openrouter/{fallback_model}",
+                **({"api_key": openrouter_api_key} if openrouter_api_key else {}),
                 **kwargs,
             )
+            for fallback_model in fallback_models
+        ]
 
-        # Else fall back to whichever key is available (no runtime fallback possible)
-        api_key = special_key or general_key
-        return GeneralLlm(model=model, api_key=api_key, **kwargs)
+    async def invoke(self, prompt: Any, system_prompt: str | None = None) -> str:  # type: ignore[override]
+        errors: list[Exception] = []
+        for llm in (self, *self._fallback_llms):
+            try:
+                if llm is self:
+                    return await self._invoke_primary(prompt, system_prompt)
+                return await self._invoke_fallback(llm, prompt, system_prompt)
+            except Exception as exc:
+                _record_deprecation_if_matched(llm.model, str(exc))
+                errors.append(exc)
+                logger.warning("Free model %s failed; trying the next configured free route: %s", llm.model, exc)
+        raise errors[-1]
 
-    # OpenRouter models that bypass the donated wrapper: plain GeneralLlm.
-    # Covers (a) providers not in DONATED_KEY_PROVIDERS (x-ai, qwen, etc.),
-    # (b) Google when GEMINI_USE_DONATED_OPENROUTER_KEY is explicitly off (the
-    # default is now ON), and (c) blocklisted Google models
-    # (DONATED_KEY_BLOCKED_GOOGLE_MODELS, e.g. gemini-3.1-pro) which are pinned to
-    # the personal key even when the toggle is ON.
-    # No api_key passed — litellm picks up OPENROUTER_API_KEY from env. This
-    # mirrors how Grok-via-OpenRouter has always worked in production.
-    return GeneralLlm(model=model, **kwargs)
+    async def _invoke_primary(self, prompt: Any, system_prompt: str | None = None) -> str:
+        return await super().invoke(prompt, system_prompt)
+
+    async def _invoke_fallback(
+        self, llm: GeneralLlm, prompt: Any, system_prompt: str | None = None
+    ) -> str:
+        return await llm.invoke(prompt, system_prompt)
+
+
+def build_llm_with_free_model_fallback(**kwargs: Any) -> GeneralLlm:
+    """Build the configured NVIDIA NIM primary and OpenRouter ``:free`` fallbacks."""
+    # Existing role configs target several reasoning APIs; these controls are
+    # not portable across the GLM, Qwen, and Nemotron endpoints.
+    kwargs.pop("reasoning", None)
+    kwargs.pop("extra_body", None)
+    primary_model = os.getenv(NVIDIA_NIM_MODEL_ENV, "nvidia_nim/z-ai/glm4.5")
+    fallback_models = tuple(
+        model.strip()
+        for model in os.getenv(
+            OPENROUTER_FREE_FALLBACK_MODELS_ENV,
+            "qwen/qwen3-30b-a3b:free,nvidia/nemotron-3-nano-30b-a3b:free",
+        ).split(",")
+        if model.strip()
+    )
+    if any(not model.endswith(":free") for model in fallback_models):
+        raise ValueError("Every OPENROUTER_FREE_FALLBACK_MODELS entry must end in ':free'")
+    return FreeModelFallbackLlm(
+        model=primary_model,
+        fallback_models=fallback_models,
+        nvidia_api_key=os.getenv(NVIDIA_NIM_API_KEY_ENV),
+        openrouter_api_key=os.getenv(OPENROUTER_API_KEY_ENV),
+        **kwargs,
+    )
+
+
+def build_llm_with_openrouter_fallback(model: str, **kwargs: Any) -> GeneralLlm:
+    """Compatibility builder; all application LLM roles use the free-only chain."""
+    del model
+    return build_llm_with_free_model_fallback(**kwargs)

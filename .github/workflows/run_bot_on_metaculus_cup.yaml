@@ -90,7 +90,7 @@ jobs:
           # is lost if the run crashes before a buffer flush.
           PYTHONUNBUFFERED: '1'
           METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }} # replace this with the name of the variable under which you stored your own Metaculus token
-          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           NIMBLE_API_KEY: ${{ secrets.NIMBLE_API_KEY }}
           RESEARCH_PROVIDER: 'nimble'

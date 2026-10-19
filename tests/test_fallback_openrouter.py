@@ -820,6 +820,7 @@ class TestBuilder:
             "openrouter/google/gemma-4-31b-it:free",
             "openrouter/nvidia/nemotron-3.5-lightning:free",
             "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+            "openrouter/free",
         ]
 
     def test_builder_rejects_non_free_fallback_models(self, monkeypatch: pytest.MonkeyPatch) -> None:

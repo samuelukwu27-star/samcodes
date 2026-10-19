@@ -787,7 +787,7 @@ def build_llm_with_free_model_fallback(**kwargs: Any) -> GeneralLlm:
         model.strip()
         for model in os.getenv(
             OPENROUTER_FREE_FALLBACK_MODELS_ENV,
-            "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-lightning:free,nvidia/nemotron-3-ultra-550b-a55b:free",
+            "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-lightning:free,nvidia/nemotron-3-ultra-550b-a55b:free,openrouter/free",
         ).split(",")
         if model.strip()
     )
